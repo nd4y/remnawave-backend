@@ -12,9 +12,11 @@ import {
 } from '../interfaces/credential-payload.interface';
 import {
     AcmeCredentialResponseModel,
+    AcmeCredentialTestResponseModel,
     GetAcmeCredentialsResponseModel,
 } from '../models';
 import { AcmeSecretBoxService } from '../crypto/acme-secret-box.service';
+import { SolverFactory } from '../engine/solvers/solver.factory';
 import { AcmeCredentialsRepository } from '../repositories/acme-credentials.repository';
 
 @Injectable()
@@ -24,6 +26,7 @@ export class AcmeCredentialsService {
     constructor(
         private readonly credentialsRepository: AcmeCredentialsRepository,
         private readonly secretBox: AcmeSecretBoxService,
+        private readonly solverFactory: SolverFactory,
     ) {}
 
     public async getAll(): Promise<TResult<GetAcmeCredentialsResponseModel>> {
@@ -131,6 +134,36 @@ export class AcmeCredentialsService {
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.DELETE_ACME_CREDENTIAL_ERROR);
+        }
+    }
+
+    /**
+     * Checks that the credential actually works and reports what it may do.
+     *
+     * For acme-proxy this is the only way an operator sees the allow list without
+     * shell access to the proxy host — which is exactly when a certificate fails
+     * with "domain is not allowed" and nobody remembers what was configured.
+     */
+    public async test(uuid: string): Promise<TResult<AcmeCredentialTestResponseModel>> {
+        if (!this.secretBox.isConfigured) {
+            return fail(ERRORS.ACME_SECRET_KEY_MISSING);
+        }
+
+        try {
+            const credential = await this.credentialsRepository.findByUUID(uuid);
+
+            if (!credential) {
+                return fail(ERRORS.ACME_CREDENTIAL_NOT_FOUND);
+            }
+
+            const solver = this.solverFactory.create(credential);
+            const description = await solver.describe();
+
+            return ok(new AcmeCredentialTestResponseModel(description));
+        } catch (error) {
+            this.logger.error(error);
+
+            return fail(ERRORS.ACME_CREDENTIAL_TEST_FAILED.withMessage(String(error)));
         }
     }
 

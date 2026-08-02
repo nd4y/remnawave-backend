@@ -17,6 +17,9 @@ import {
     GetAcmeCertificateCommand,
     GetAcmeCertificateEventsCommand,
     GetAcmeCertificatesCommand,
+    GetAcmePersistRecordCommand,
+    IssueAcmeCertificateCommand,
+    PublishAcmePersistRecordCommand,
     UpdateAcmeCertificateCommand,
 } from '@libs/contracts/commands';
 
@@ -30,6 +33,12 @@ import {
     GetAcmeCertificateParamDto,
     GetAcmeCertificateResponseDto,
     GetAcmeCertificatesResponseDto,
+    GetAcmePersistRecordParamDto,
+    GetAcmePersistRecordResponseDto,
+    IssueAcmeCertificateParamDto,
+    IssueAcmeCertificateResponseDto,
+    PublishAcmePersistRecordParamDto,
+    PublishAcmePersistRecordResponseDto,
     UpdateAcmeCertificateBodyDto,
     UpdateAcmeCertificateResponseDto,
 } from './dtos';
@@ -112,6 +121,51 @@ export class AcmeCertificatesController {
         @Param() param: DeleteAcmeCertificateParamDto,
     ): Promise<DeleteAcmeCertificateResponseDto> {
         const result = await this.acmeCertificatesService.delete(param.uuid);
+
+        return {
+            response: errorHandler(result),
+        };
+    }
+
+    @Endpoint({
+        type: IssueAcmeCertificateResponseDto,
+        command: IssueAcmeCertificateCommand,
+        httpCode: HttpStatus.OK,
+    })
+    async issueCertificate(
+        @Param() param: IssueAcmeCertificateParamDto,
+    ): Promise<IssueAcmeCertificateResponseDto> {
+        const result = await this.acmeCertificatesService.issue(param.uuid);
+
+        return {
+            response: errorHandler(result),
+        };
+    }
+
+    @Endpoint({
+        type: GetAcmePersistRecordResponseDto,
+        command: GetAcmePersistRecordCommand,
+        httpCode: HttpStatus.OK,
+    })
+    async getPersistRecord(
+        @Param() param: GetAcmePersistRecordParamDto,
+    ): Promise<GetAcmePersistRecordResponseDto> {
+        const result = await this.acmeCertificatesService.getPersistRecord(param.uuid);
+
+        return {
+            response: errorHandler(result),
+        };
+    }
+
+    @Endpoint({
+        type: PublishAcmePersistRecordResponseDto,
+        command: PublishAcmePersistRecordCommand,
+        httpCode: HttpStatus.OK,
+    })
+    async publishPersistRecord(
+        @Param() param: PublishAcmePersistRecordParamDto,
+    ): Promise<PublishAcmePersistRecordResponseDto> {
+        const result = await this.acmeCertificatesService.getPersistRecord(param.uuid, true);
 
         return {
             response: errorHandler(result),

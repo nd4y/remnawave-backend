@@ -15,6 +15,7 @@ import {
     CreateAcmeCredentialCommand,
     DeleteAcmeCredentialCommand,
     GetAcmeCredentialsCommand,
+    TestAcmeCredentialCommand,
     UpdateAcmeCredentialCommand,
 } from '@libs/contracts/commands';
 
@@ -24,6 +25,8 @@ import {
     DeleteAcmeCredentialParamDto,
     DeleteAcmeCredentialResponseDto,
     GetAcmeCredentialsResponseDto,
+    TestAcmeCredentialParamDto,
+    TestAcmeCredentialResponseDto,
     UpdateAcmeCredentialBodyDto,
     UpdateAcmeCredentialResponseDto,
 } from './dtos';
@@ -76,6 +79,21 @@ export class AcmeCredentialsController {
         @Body() body: UpdateAcmeCredentialBodyDto,
     ): Promise<UpdateAcmeCredentialResponseDto> {
         const result = await this.acmeCredentialsService.update(body);
+
+        return {
+            response: errorHandler(result),
+        };
+    }
+
+    @Endpoint({
+        type: TestAcmeCredentialResponseDto,
+        command: TestAcmeCredentialCommand,
+        httpCode: HttpStatus.OK,
+    })
+    async testCredential(
+        @Param() param: TestAcmeCredentialParamDto,
+    ): Promise<TestAcmeCredentialResponseDto> {
+        const result = await this.acmeCredentialsService.test(param.uuid);
 
         return {
             response: errorHandler(result),

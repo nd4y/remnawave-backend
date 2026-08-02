@@ -3,16 +3,27 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { Injectable, Logger } from '@nestjs/common';
 
 import { fail, ok, TResult } from '@common/types';
-import { ACME_CERTIFICATE_STATUS, ERRORS } from '@libs/contracts/constants';
+import { ACME_CERTIFICATE_STATUS, ACME_CHALLENGE_TYPE, ERRORS } from '@libs/contracts/constants';
+
+import { AcmeQueueService } from '@queue/_acme';
 
 import { CreateAcmeCertificateBodyDto, UpdateAcmeCertificateBodyDto } from '../dtos';
 import {
     AcmeCertificateResponseModel,
     AcmeEventResponseModel,
+    AcmePersistRecordResponseModel,
     GetAcmeCertificateEventsResponseModel,
     GetAcmeCertificatesResponseModel,
 } from '../models';
 import { AcmeSecretBoxService } from '../crypto/acme-secret-box.service';
+import { AcmeOrderService } from '../engine/acme-order.service';
+import { isTxtValuePublished } from '../engine/dns-propagation.util';
+import {
+    buildPersistRecordName,
+    buildPersistRecordValue,
+    resolveIssuerDomain,
+} from '../engine/persist-record.util';
+import { SolverFactory } from '../engine/solvers/solver.factory';
 import { AcmeCertificatesRepository } from '../repositories/acme-certificates.repository';
 import { AcmeCredentialsRepository } from '../repositories/acme-credentials.repository';
 import { AcmeEventsRepository } from '../repositories/acme-events.repository';
@@ -29,6 +40,9 @@ export class AcmeCertificatesService {
         private readonly credentialsRepository: AcmeCredentialsRepository,
         private readonly eventsRepository: AcmeEventsRepository,
         private readonly secretBox: AcmeSecretBoxService,
+        private readonly solverFactory: SolverFactory,
+        private readonly acmeOrderService: AcmeOrderService,
+        private readonly acmeQueueService: AcmeQueueService,
     ) {}
 
     public async getAll(): Promise<TResult<GetAcmeCertificatesResponseModel>> {
@@ -248,6 +262,119 @@ export class AcmeCertificatesService {
         } catch (error) {
             this.logger.error(error);
             return fail(ERRORS.GET_ACME_CERTIFICATES_ERROR);
+        }
+    }
+
+    /**
+     * Queues an order. It is not awaited: an order takes tens of seconds, and the
+     * certificate's status and events are where progress belongs.
+     */
+    public async issue(uuid: string): Promise<TResult<{ isQueued: boolean }>> {
+        if (!this.secretBox.isConfigured) {
+            return fail(ERRORS.ACME_SECRET_KEY_MISSING);
+        }
+
+        try {
+            const certificate = await this.certificatesRepository.findByUUID(uuid);
+
+            if (!certificate) {
+                return fail(ERRORS.ACME_CERTIFICATE_NOT_FOUND);
+            }
+
+            // A manual run clears the backoff: the operator is presumably fixing
+            // whatever was broken and should not wait out the previous penalty.
+            await this.certificatesRepository.updateResult(uuid, { nextRetryAt: null });
+
+            await this.acmeQueueService.issueCertificate({
+                certificateUuid: uuid,
+                force: true,
+            });
+
+            await this.eventsRepository.create(uuid, 'INFO', 'Issuance requested manually');
+
+            return ok({ isQueued: true });
+        } catch (error) {
+            this.logger.error(error);
+
+            return fail(ERRORS.ACME_CERTIFICATE_ISSUE_ERROR.withMessage(String(error)));
+        }
+    }
+
+    /**
+     * The persistent authorization record for a dns-persist-01 certificate.
+     *
+     * Building it needs the ACME account URI, so the account is registered on
+     * first call — the record cannot be shown before the CA knows the account it
+     * points at.
+     */
+    public async getPersistRecord(
+        uuid: string,
+        publish = false,
+    ): Promise<TResult<AcmePersistRecordResponseModel>> {
+        if (!this.secretBox.isConfigured) {
+            return fail(ERRORS.ACME_SECRET_KEY_MISSING);
+        }
+
+        try {
+            const certificate = await this.certificatesRepository.findByUUID(uuid);
+
+            if (!certificate) {
+                return fail(ERRORS.ACME_CERTIFICATE_NOT_FOUND);
+            }
+
+            if (certificate.challengeType !== ACME_CHALLENGE_TYPE.DNS_PERSIST_01) {
+                return fail(ERRORS.ACME_PERSIST_RECORD_NOT_APPLICABLE);
+            }
+
+            const credential = certificate.credentialUuid
+                ? await this.credentialsRepository.findByUUID(certificate.credentialUuid)
+                : null;
+
+            if (!credential) {
+                return fail(ERRORS.ACME_CREDENTIAL_NOT_FOUND);
+            }
+
+            const { account } = await this.acmeOrderService.buildClient(certificate);
+
+            const name = buildPersistRecordName(certificate.domains);
+            const value = buildPersistRecordValue(
+                resolveIssuerDomain(certificate.directoryUrl),
+                account.accountUrl!,
+                certificate.domains,
+            );
+
+            const solver = this.solverFactory.create(credential);
+
+            if (publish) {
+                if (!solver.canPublish) {
+                    return fail(
+                        ERRORS.ACME_SOLVER_ERROR.withMessage(
+                            `Credential "${credential.name}" cannot publish records. Add the record to your DNS zone manually.`,
+                        ),
+                    );
+                }
+
+                await solver.publishPersist(name, value);
+
+                await this.eventsRepository.create(
+                    uuid,
+                    'INFO',
+                    `Published the persistent authorization record ${name}`,
+                );
+            }
+
+            return ok(
+                new AcmePersistRecordResponseModel({
+                    name,
+                    value,
+                    isPublished: await isTxtValuePublished(name, value),
+                    canPublish: solver.canPublish,
+                }),
+            );
+        } catch (error) {
+            this.logger.error(error);
+
+            return fail(ERRORS.ACME_SOLVER_ERROR.withMessage(String(error)));
         }
     }
 
