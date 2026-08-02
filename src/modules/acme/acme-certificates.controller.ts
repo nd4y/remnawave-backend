@@ -18,8 +18,10 @@ import {
     GetAcmeCertificateEventsCommand,
     GetAcmeCertificatesCommand,
     GetAcmePersistRecordCommand,
+    ImportAcmeCertificateCommand,
     IssueAcmeCertificateCommand,
     PublishAcmePersistRecordCommand,
+    ReimportAcmeCertificateCommand,
     UpdateAcmeCertificateCommand,
 } from '@libs/contracts/commands';
 
@@ -35,10 +37,15 @@ import {
     GetAcmeCertificatesResponseDto,
     GetAcmePersistRecordParamDto,
     GetAcmePersistRecordResponseDto,
+    ImportAcmeCertificateBodyDto,
+    ImportAcmeCertificateResponseDto,
     IssueAcmeCertificateParamDto,
     IssueAcmeCertificateResponseDto,
     PublishAcmePersistRecordParamDto,
     PublishAcmePersistRecordResponseDto,
+    ReimportAcmeCertificateBodyDto,
+    ReimportAcmeCertificateParamDto,
+    ReimportAcmeCertificateResponseDto,
     UpdateAcmeCertificateBodyDto,
     UpdateAcmeCertificateResponseDto,
 } from './dtos';
@@ -121,6 +128,37 @@ export class AcmeCertificatesController {
         @Param() param: DeleteAcmeCertificateParamDto,
     ): Promise<DeleteAcmeCertificateResponseDto> {
         const result = await this.acmeCertificatesService.delete(param.uuid);
+
+        return {
+            response: errorHandler(result),
+        };
+    }
+
+    @Endpoint({
+        type: ImportAcmeCertificateResponseDto,
+        command: ImportAcmeCertificateCommand,
+        httpCode: HttpStatus.CREATED,
+    })
+    async importCertificate(
+        @Body() body: ImportAcmeCertificateBodyDto,
+    ): Promise<ImportAcmeCertificateResponseDto> {
+        const result = await this.acmeCertificatesService.import(body);
+
+        return {
+            response: errorHandler(result),
+        };
+    }
+
+    @Endpoint({
+        type: ReimportAcmeCertificateResponseDto,
+        command: ReimportAcmeCertificateCommand,
+        httpCode: HttpStatus.OK,
+    })
+    async reimportCertificate(
+        @Param() param: ReimportAcmeCertificateParamDto,
+        @Body() body: ReimportAcmeCertificateBodyDto,
+    ): Promise<ReimportAcmeCertificateResponseDto> {
+        const result = await this.acmeCertificatesService.reimport(param.uuid, body);
 
         return {
             response: errorHandler(result),

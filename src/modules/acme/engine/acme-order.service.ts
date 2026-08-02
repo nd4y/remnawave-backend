@@ -182,24 +182,31 @@ export class AcmeOrderService {
     public async buildClient(
         certificate: AcmeCertificateEntity,
     ): Promise<{ account: AcmeAccountEntity; client: acme.Client }> {
-        let account = await this.accountsRepository.findByDirectoryAndEmail(
-            certificate.directoryUrl,
-            certificate.email,
-        );
+        // Null only for imported certificates, which never reach this code: they
+        // have no CA behind them and nothing to order.
+        const { directoryUrl, email } = certificate;
+
+        if (!directoryUrl || !email) {
+            throw new Error(
+                'The certificate has no certificate authority configured, so it cannot be ordered',
+            );
+        }
+
+        let account = await this.accountsRepository.findByDirectoryAndEmail(directoryUrl, email);
 
         if (!account) {
             const accountKey = await acme.crypto.createPrivateEcdsaKey('P-256');
 
             account = await this.accountsRepository.create({
-                directoryUrl: certificate.directoryUrl,
-                email: certificate.email,
+                directoryUrl,
+                email,
                 accountKeyEncrypted: this.secretBox.encrypt(accountKey.toString()),
                 eabKid: certificate.eabKid,
             });
         }
 
         const client = new acme.Client({
-            directoryUrl: certificate.directoryUrl,
+            directoryUrl,
             accountKey: this.secretBox.decrypt(account.accountKeyEncrypted),
             ...(account.accountUrl ? { accountUrl: account.accountUrl } : {}),
             ...(account.eabKid && account.eabHmacEncrypted
@@ -280,7 +287,7 @@ export class AcmeOrderService {
             // failure from the CA.
             const name = buildPersistRecordName(certificate.domains);
             const value = buildPersistRecordValue(
-                resolveIssuerDomain(certificate.directoryUrl),
+                resolveIssuerDomain(certificate.directoryUrl ?? ''),
                 account.accountUrl!,
                 certificate.domains,
             );

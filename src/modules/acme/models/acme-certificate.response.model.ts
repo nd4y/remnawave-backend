@@ -1,4 +1,5 @@
 import {
+    TAcmeCertificateSource,
     TAcmeCertificateStatus,
     TAcmeChallengeType,
     TAcmeKeyType,
@@ -16,13 +17,15 @@ export class AcmeCertificateResponseModel {
     public name: string;
     public domains: string[];
 
+    public source: TAcmeCertificateSource;
+
     public challengeType: TAcmeChallengeType;
     public keyType: TAcmeKeyType;
     public renewBeforeDays: number;
     public isEnabled: boolean;
 
-    public directoryUrl: string;
-    public email: string;
+    public directoryUrl: null | string;
+    public email: null | string;
     public eabKid: null | string;
 
     public status: TAcmeCertificateStatus;
@@ -45,6 +48,8 @@ export class AcmeCertificateResponseModel {
         this.uuid = entity.uuid;
         this.name = entity.name;
         this.domains = entity.domains;
+
+        this.source = entity.source;
 
         this.challengeType = entity.challengeType;
         this.keyType = entity.keyType;

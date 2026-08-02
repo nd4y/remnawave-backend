@@ -3,11 +3,22 @@ import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { Injectable, Logger } from '@nestjs/common';
 
 import { fail, ok, TResult } from '@common/types';
-import { ACME_CERTIFICATE_STATUS, ACME_CHALLENGE_TYPE, ERRORS } from '@libs/contracts/constants';
+import {
+    ACME_CERTIFICATE_SOURCE,
+    ACME_CERTIFICATE_STATUS,
+    ACME_CHALLENGE_TYPE,
+    ERRORS,
+} from '@libs/contracts/constants';
 
 import { AcmeQueueService } from '@queue/_acme';
+import { NodesQueuesService } from '@queue/_nodes';
 
-import { CreateAcmeCertificateBodyDto, UpdateAcmeCertificateBodyDto } from '../dtos';
+import {
+    CreateAcmeCertificateBodyDto,
+    ImportAcmeCertificateBodyDto,
+    ReimportAcmeCertificateBodyDto,
+    UpdateAcmeCertificateBodyDto,
+} from '../dtos';
 import {
     AcmeCertificateResponseModel,
     AcmeEventResponseModel,
@@ -18,6 +29,7 @@ import {
 import { AcmeSecretBoxService } from '../crypto/acme-secret-box.service';
 import { AcmeOrderService } from '../engine/acme-order.service';
 import { isTxtValuePublished } from '../engine/dns-propagation.util';
+import { parseCertificateMaterial } from '../engine/import-certificate.util';
 import {
     buildPersistRecordName,
     buildPersistRecordValue,
@@ -43,6 +55,7 @@ export class AcmeCertificatesService {
         private readonly solverFactory: SolverFactory,
         private readonly acmeOrderService: AcmeOrderService,
         private readonly acmeQueueService: AcmeQueueService,
+        private readonly nodesQueuesService: NodesQueuesService,
     ) {}
 
     public async getAll(): Promise<TResult<GetAcmeCertificatesResponseModel>> {
@@ -164,7 +177,11 @@ export class AcmeCertificatesService {
                 }
             }
 
-            const needsReissue = this.needsReissue(certificate, dto);
+            // An imported certificate has nothing to re-issue: its material is
+            // whatever was uploaded, and only a new upload replaces it.
+            const needsReissue =
+                certificate.source === ACME_CERTIFICATE_SOURCE.ACME &&
+                this.needsReissue(certificate, dto);
 
             const updated = await this.certificatesRepository.update(
                 dto.uuid,
@@ -266,6 +283,110 @@ export class AcmeCertificatesService {
     }
 
     /**
+     * Stores a certificate the panel did not issue.
+     *
+     * Everything that describes it — domains, validity, key type — is read from
+     * the certificate rather than taken from the request: the operator cannot
+     * mistype what the certificate actually covers.
+     */
+    public async import(
+        dto: ImportAcmeCertificateBodyDto,
+    ): Promise<TResult<AcmeCertificateResponseModel>> {
+        if (!this.secretBox.isConfigured) {
+            return fail(ERRORS.ACME_SECRET_KEY_MISSING);
+        }
+
+        try {
+            const existing = await this.certificatesRepository.findByName(dto.name);
+
+            if (existing) {
+                return fail(ERRORS.ACME_CERTIFICATE_NAME_ALREADY_EXISTS);
+            }
+
+            const material = parseCertificateMaterial(dto.fullchainPem, dto.privateKeyPem);
+
+            const certificate = await this.certificatesRepository.createImported(
+                {
+                    name: dto.name,
+                    domains: material.domains,
+                    keyType: material.keyType,
+                    isEnabled: dto.isEnabled,
+                    fullchainPem: material.fullchainPem,
+                    keyEncrypted: this.secretBox.encrypt(material.privateKeyPem),
+                    fingerprint: material.fingerprint,
+                    issuedAt: material.issuedAt,
+                    expiresAt: material.expiresAt,
+                },
+                dto.nodes,
+            );
+
+            await this.recordImport(certificate.uuid, material);
+            await this.restartBoundNodes(certificate);
+
+            return ok(new AcmeCertificateResponseModel(certificate));
+        } catch (error) {
+            if (error instanceof PrismaClientKnownRequestError && error.code === 'P2003') {
+                return fail(
+                    ERRORS.ACME_INVALID_CERTIFICATE_REQUEST.withMessage(
+                        'One of the nodes does not exist',
+                    ),
+                );
+            }
+
+            this.logger.error(error);
+
+            return fail(ERRORS.ACME_INVALID_PEM.withMessage(describeError(error)));
+        }
+    }
+
+    /**
+     * Replaces the material of an imported certificate. This is how such a
+     * certificate is renewed: whoever issued it renews it, and the new PEM lands
+     * here.
+     */
+    public async reimport(
+        uuid: string,
+        dto: ReimportAcmeCertificateBodyDto,
+    ): Promise<TResult<AcmeCertificateResponseModel>> {
+        if (!this.secretBox.isConfigured) {
+            return fail(ERRORS.ACME_SECRET_KEY_MISSING);
+        }
+
+        try {
+            const certificate = await this.certificatesRepository.findByUUID(uuid);
+
+            if (!certificate) {
+                return fail(ERRORS.ACME_CERTIFICATE_NOT_FOUND);
+            }
+
+            if (certificate.source !== ACME_CERTIFICATE_SOURCE.IMPORTED) {
+                return fail(ERRORS.ACME_CERTIFICATE_NOT_IMPORTED);
+            }
+
+            const material = parseCertificateMaterial(dto.fullchainPem, dto.privateKeyPem);
+
+            const updated = await this.certificatesRepository.replaceMaterial(uuid, {
+                domains: material.domains,
+                keyType: material.keyType,
+                fullchainPem: material.fullchainPem,
+                keyEncrypted: this.secretBox.encrypt(material.privateKeyPem),
+                fingerprint: material.fingerprint,
+                issuedAt: material.issuedAt,
+                expiresAt: material.expiresAt,
+            });
+
+            await this.recordImport(uuid, material);
+            await this.restartBoundNodes(updated);
+
+            return ok(new AcmeCertificateResponseModel(updated));
+        } catch (error) {
+            this.logger.error(error);
+
+            return fail(ERRORS.ACME_INVALID_PEM.withMessage(describeError(error)));
+        }
+    }
+
+    /**
      * Queues an order. It is not awaited: an order takes tens of seconds, and the
      * certificate's status and events are where progress belongs.
      */
@@ -279,6 +400,10 @@ export class AcmeCertificatesService {
 
             if (!certificate) {
                 return fail(ERRORS.ACME_CERTIFICATE_NOT_FOUND);
+            }
+
+            if (certificate.source === ACME_CERTIFICATE_SOURCE.IMPORTED) {
+                return fail(ERRORS.ACME_CERTIFICATE_IS_IMPORTED);
             }
 
             // A manual run clears the backoff: the operator is presumably fixing
@@ -338,7 +463,7 @@ export class AcmeCertificatesService {
 
             const name = buildPersistRecordName(certificate.domains);
             const value = buildPersistRecordValue(
-                resolveIssuerDomain(certificate.directoryUrl),
+                resolveIssuerDomain(certificate.directoryUrl ?? ''),
                 account.accountUrl!,
                 certificate.domains,
             );
@@ -378,8 +503,46 @@ export class AcmeCertificatesService {
         }
     }
 
+    /**
+     * Notes what was imported, and says out loud when the material is already
+     * expired: importing one is allowed — sometimes that is what an operator is
+     * repairing — but it must not pass silently.
+     */
+    private async recordImport(
+        certificateUuid: string,
+        material: { domains: string[]; expiresAt: Date; isExpired: boolean },
+    ): Promise<void> {
+        await this.eventsRepository.create(
+            certificateUuid,
+            'INFO',
+            `Imported certificate for ${material.domains.join(', ')}, valid until ${material.expiresAt.toISOString()}`,
+        );
+
+        if (material.isExpired) {
+            await this.eventsRepository.create(
+                certificateUuid,
+                'ERROR',
+                'The imported certificate is already expired; nodes will serve it as is',
+            );
+        }
+    }
+
+    /** Delivery happens when a node rebuilds its config, so a restart is what applies new material. */
+    private async restartBoundNodes(certificate: {
+        nodes: { nodeUuid: string }[];
+    }): Promise<void> {
+        for (const nodeUuid of new Set(certificate.nodes.map((binding) => binding.nodeUuid))) {
+            await this.nodesQueuesService.startNode({ nodeUuid });
+        }
+    }
+
     private needsReissue(
-        certificate: { challengeType: string; directoryUrl: string; domains: string[]; keyType: string },
+        certificate: {
+            challengeType: string;
+            directoryUrl: null | string;
+            domains: string[];
+            keyType: string;
+        },
         dto: UpdateAcmeCertificateBodyDto,
     ): boolean {
         return REISSUE_TRIGGERS.some((field) => {
@@ -399,4 +562,13 @@ export class AcmeCertificatesService {
             return next !== certificate[field];
         });
     }
+}
+
+/**
+ * Import failures are almost always about the material — a mismatched key, a
+ * chain in the wrong order, an encrypted key — so the reason is passed through
+ * to the operator instead of being flattened into "invalid PEM".
+ */
+function describeError(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
 }

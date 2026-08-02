@@ -4,6 +4,8 @@ export * from './get-acme-certificate-events.command';
 export * from './get-acme-certificate.command';
 export * from './get-acme-certificates.command';
 export * from './get-acme-persist-record.command';
+export * from './import-acme-certificate.command';
 export * from './issue-acme-certificate.command';
 export * from './publish-acme-persist-record.command';
+export * from './reimport-acme-certificate.command';
 export * from './update-acme-certificate.command';

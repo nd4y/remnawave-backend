@@ -1300,4 +1300,24 @@ export const ERRORS = {
             httpCode: 502,
         }),
     },
+    ACME_INVALID_PEM: {
+        code: 'A256',
+        message: 'The certificate or the private key could not be read',
+        httpCode: 400,
+        withMessage: (message: string) => ({
+            code: 'A256',
+            message,
+            httpCode: 400,
+        }),
+    },
+    ACME_CERTIFICATE_NOT_IMPORTED: {
+        code: 'A257',
+        message: 'Only imported certificates can have their material replaced',
+        httpCode: 400,
+    },
+    ACME_CERTIFICATE_IS_IMPORTED: {
+        code: 'A258',
+        message: 'Imported certificates are not issued by the panel; upload a new one instead',
+        httpCode: 400,
+    },
 } as const;

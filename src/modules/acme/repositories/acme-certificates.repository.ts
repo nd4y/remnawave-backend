@@ -60,6 +60,71 @@ export class AcmeCertificatesRepository {
     }
 
     /**
+     * Stores material the panel did not issue. Domains, validity and key type
+     * come from the certificate itself, so there is nothing for the caller to
+     * get wrong, and the certificate is active from the moment it is stored.
+     */
+    public async createImported(
+        data: {
+            domains: string[];
+            expiresAt: Date;
+            fingerprint: string;
+            fullchainPem: string;
+            isEnabled: boolean;
+            issuedAt: Date;
+            keyEncrypted: string;
+            keyType: string;
+            name: string;
+        },
+        nodes: { inboundTags: string[]; nodeUuid: string }[],
+    ): Promise<AcmeCertificateEntity> {
+        const result = await this.prisma.tx.acmeCertificates.create({
+            data: {
+                ...data,
+                source: 'IMPORTED',
+                status: 'ACTIVE',
+                nodes: {
+                    create: nodes.map((binding) => ({
+                        nodeUuid: binding.nodeUuid,
+                        inboundTags: binding.inboundTags,
+                    })),
+                },
+            },
+            include: WITH_RELATIONS,
+        });
+
+        return new AcmeCertificateEntity(result);
+    }
+
+    /** Replaces the material of an imported certificate; this is how it is renewed. */
+    public async replaceMaterial(
+        uuid: string,
+        data: {
+            domains: string[];
+            expiresAt: Date;
+            fingerprint: string;
+            fullchainPem: string;
+            issuedAt: Date;
+            keyEncrypted: string;
+            keyType: string;
+        },
+    ): Promise<AcmeCertificateEntity> {
+        const result = await this.prisma.tx.acmeCertificates.update({
+            where: { uuid },
+            data: {
+                ...data,
+                status: 'ACTIVE',
+                lastError: null,
+                failCount: 0,
+                nextRetryAt: null,
+            },
+            include: WITH_RELATIONS,
+        });
+
+        return new AcmeCertificateEntity(result);
+    }
+
+    /**
      * Updates the certificate and, when bindings are given, replaces them
      * wholesale. Both happen in the caller's transaction, so a half-applied
      * binding set is not observable.
@@ -153,15 +218,19 @@ export class AcmeCertificatesRepository {
     }
 
     /**
-     * Certificates the scheduler should act on: enabled, not waiting for a manual
-     * DNS record, past their renewal window (or never issued), and not held back
-     * by the retry backoff.
+     * Certificates the scheduler should act on: issued by the panel, enabled, not
+     * waiting for a manual DNS record, past their renewal window (or never
+     * issued), and not held back by the retry backoff.
+     *
+     * Imported certificates are excluded by construction: the panel has no way to
+     * renew what it did not issue.
      */
     public async findDueForRenewal(now: Date): Promise<AcmeCertificateEntity[]> {
         const result = await this.prisma.tx.$queryRaw<{ uuid: string }[]>`
             SELECT uuid
             FROM acme_certificates
             WHERE is_enabled = true
+              AND source = 'ACME'
               AND status <> 'AWAITING_DNS'
               AND status <> 'ISSUING'
               AND (next_retry_at IS NULL OR next_retry_at <= ${now})

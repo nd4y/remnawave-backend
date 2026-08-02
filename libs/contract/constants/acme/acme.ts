@@ -19,6 +19,24 @@ export type TAcmeProvider = (typeof ACME_PROVIDER)[keyof typeof ACME_PROVIDER];
 
 export const ACME_PROVIDERS = Object.values(ACME_PROVIDER) as [TAcmeProvider, ...TAcmeProvider[]];
 
+export const ACME_CERTIFICATE_SOURCE = {
+    /** Ordered and renewed by the panel. */
+    ACME: 'ACME',
+    /**
+     * Uploaded material. The panel stores and delivers it, but never renews it:
+     * whoever issued it also renews it, and the new PEM is imported again.
+     */
+    IMPORTED: 'IMPORTED',
+} as const;
+
+export type TAcmeCertificateSource =
+    (typeof ACME_CERTIFICATE_SOURCE)[keyof typeof ACME_CERTIFICATE_SOURCE];
+
+export const ACME_CERTIFICATE_SOURCES = Object.values(ACME_CERTIFICATE_SOURCE) as [
+    TAcmeCertificateSource,
+    ...TAcmeCertificateSource[],
+];
+
 export const ACME_CHALLENGE_TYPE = {
     /**
      * A fresh TXT record per issuance.

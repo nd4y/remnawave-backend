@@ -9,7 +9,9 @@ Three entities, in the shape Nginx Proxy Manager made familiar:
 
 - **Credential** — how DNS challenges are answered. Reusable: many certificates
   share one.
-- **Certificate** — domains, a credential, a CA and renewal settings.
+- **Certificate** — domains, a credential, a CA and renewal settings. It is
+  either issued by the panel or [imported](#importing-a-certificate-the-panel-did-not-issue);
+  imported ones need no credential at all.
 - **Binding** — which nodes get the certificate, and optionally which inbound
   tags on them.
 
@@ -58,6 +60,48 @@ the certificate is injected into the config of each bound node as it is sent.
 
 4. Bind it to nodes and press **Issue now**. The order runs in the background;
    the status and the log in the details drawer show what happened.
+
+## Importing a certificate the panel did not issue
+
+Not every certificate comes from ACME: some are bought, some come from an
+internal CA, some are already being renewed by something else. Such a
+certificate can be uploaded and delivered to nodes like any other.
+
+In the UI: **Certificates → Import**. Both fields take PEM text, and **From
+file** simply reads a file into the same field — pasting and uploading end up in
+the same place.
+
+Over the API it is one JSON body, so scripts do not need multipart:
+
+```bash
+curl -X POST https://panel.example.com/api/acme/certificates/import \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d "$(jq -n --arg name edge-wildcard \
+        --rawfile cert fullchain.pem --rawfile key privkey.pem \
+        '{name: $name, fullchainPem: $cert, privateKeyPem: $key,
+          nodes: [{nodeUuid: "…", inboundTags: []}]}')"
+```
+
+What the panel does with it:
+
+- **reads the certificate instead of trusting the request** — domains come from
+  SAN, validity and key type from the certificate itself, so nothing here can be
+  described wrongly;
+- **checks the key belongs to the certificate.** A mismatched pair is accepted by
+  every text field in the world and only fails later, on the node, as a handshake
+  error nobody connects back to this import;
+- stores the key encrypted, exactly like an issued one, and restarts the bound
+  nodes so the material is delivered immediately.
+
+An expired certificate is accepted — sometimes that is what an operator is
+repairing — but it is recorded as an error in the log rather than passing
+silently. Password-protected keys are rejected: decrypt the key first.
+
+Imported certificates are **never renewed by the panel**: it has no way to renew
+what it did not issue. There is no *Issue* action for them; instead
+`POST /api/acme/certificates/{uuid}/import` replaces the material, which is how
+such a certificate is rotated. The scheduler skips them entirely.
 
 ## Renewals
 

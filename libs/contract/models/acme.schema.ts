@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import {
+    ACME_CERTIFICATE_SOURCES,
     ACME_CERTIFICATE_STATUSES,
     ACME_CHALLENGE_TYPES,
     ACME_EVENT_LEVELS,
@@ -51,13 +52,16 @@ export const AcmeCertificateSchema = z.object({
     name: z.string(),
     domains: z.array(AcmeDomainSchema),
 
+    source: z.enum(ACME_CERTIFICATE_SOURCES),
+
     challengeType: z.enum(ACME_CHALLENGE_TYPES),
     keyType: z.enum(ACME_KEY_TYPES),
     renewBeforeDays: z.number().int(),
     isEnabled: z.boolean(),
 
-    directoryUrl: z.string(),
-    email: z.string(),
+    /** Null for imported certificates: there is no CA and no account behind them. */
+    directoryUrl: z.nullable(z.string()),
+    email: z.nullable(z.string()),
     eabKid: z.nullable(z.string()),
 
     status: z.enum(ACME_CERTIFICATE_STATUSES),

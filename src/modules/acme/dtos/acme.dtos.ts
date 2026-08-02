@@ -10,8 +10,10 @@ import {
     GetAcmeCertificatesCommand,
     GetAcmeCredentialsCommand,
     GetAcmePersistRecordCommand,
+    ImportAcmeCertificateCommand,
     IssueAcmeCertificateCommand,
     PublishAcmePersistRecordCommand,
+    ReimportAcmeCertificateCommand,
     TestAcmeCredentialCommand,
     UpdateAcmeCertificateCommand,
     UpdateAcmeCredentialCommand,
@@ -99,6 +101,26 @@ export class IssueAcmeCertificateParamDto extends createZodDto(
 
 export class IssueAcmeCertificateResponseDto extends createZodDto(
     IssueAcmeCertificateCommand.ResponseSchema,
+) {}
+
+export class ImportAcmeCertificateBodyDto extends createZodDto(
+    ImportAcmeCertificateCommand.RequestBodySchema,
+) {}
+
+export class ImportAcmeCertificateResponseDto extends createZodDto(
+    ImportAcmeCertificateCommand.ResponseSchema,
+) {}
+
+export class ReimportAcmeCertificateParamDto extends createZodDto(
+    ReimportAcmeCertificateCommand.RequestParamSchema,
+) {}
+
+export class ReimportAcmeCertificateBodyDto extends createZodDto(
+    ReimportAcmeCertificateCommand.RequestBodySchema,
+) {}
+
+export class ReimportAcmeCertificateResponseDto extends createZodDto(
+    ReimportAcmeCertificateCommand.ResponseSchema,
 ) {}
 
 export class GetAcmeCertificateEventsParamDto extends createZodDto(

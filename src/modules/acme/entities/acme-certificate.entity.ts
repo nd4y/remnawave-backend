@@ -1,6 +1,7 @@
 import { AcmeCertificateNodes, AcmeCertificates } from '@prisma/client';
 
 import {
+    TAcmeCertificateSource,
     TAcmeCertificateStatus,
     TAcmeChallengeType,
     TAcmeKeyType,
@@ -28,13 +29,15 @@ export class AcmeCertificateEntity implements AcmeCertificates {
     public name: string;
     public domains: string[];
 
+    public source: TAcmeCertificateSource;
+
     public challengeType: TAcmeChallengeType;
     public keyType: TAcmeKeyType;
     public renewBeforeDays: number;
     public isEnabled: boolean;
 
-    public directoryUrl: string;
-    public email: string;
+    public directoryUrl: null | string;
+    public email: null | string;
     public eabKid: null | string;
 
     public status: TAcmeCertificateStatus;

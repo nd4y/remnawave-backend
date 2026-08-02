@@ -677,13 +677,18 @@ model AcmeCertificates {
   name    String   @unique @map("name")
   domains String[] @map("domains")
 
+  // ACME: the panel orders and renews it. IMPORTED: the material was uploaded,
+  // and the panel only stores and delivers it — there is nothing to renew.
+  source String @default("ACME") @map("source")
+
   challengeType   String  @default("DNS_01") @map("challenge_type") // DNS_01 | DNS_PERSIST_01
   keyType         String  @default("ECDSA_P256") @map("key_type") // ECDSA_P256 | ECDSA_P384 | RSA_2048 | RSA_4096
   renewBeforeDays Int     @default(30) @map("renew_before_days")
   isEnabled       Boolean @default(true) @map("is_enabled")
 
-  directoryUrl String  @map("directory_url")
-  email        String  @map("email")
+  // Null for imported certificates: they have no CA and no account behind them.
+  directoryUrl String? @map("directory_url")
+  email        String? @map("email")
   eabKid       String? @map("eab_kid")
 
   status      String    @default("PENDING") @map("status") // PENDING | AWAITING_DNS | ISSUING | ACTIVE | ERROR
@@ -709,7 +714,7 @@ model AcmeCertificates {
   nodes  AcmeCertificateNodes[]
   events AcmeEvents[]
 
-  @@index([isEnabled, expiresAt])
+  @@index([isEnabled, source, expiresAt])
   @@map("acme_certificates")
 }
 

@@ -19,6 +19,8 @@ export const ACME_ROUTES = {
         UPDATE: `${CERTIFICATES_ROUTE}`, // patch
         DELETE: (uuid: string) => `${CERTIFICATES_ROUTE}/${uuid}`, // delete
         ISSUE: (uuid: string) => `${CERTIFICATES_ROUTE}/${uuid}/issue`, // post
+        IMPORT: `${CERTIFICATES_ROUTE}/import`, // post
+        REIMPORT: (uuid: string) => `${CERTIFICATES_ROUTE}/${uuid}/import`, // post
         EVENTS: (uuid: string) => `${CERTIFICATES_ROUTE}/${uuid}/events`, // get
         PERSIST_RECORD: (uuid: string) => `${CERTIFICATES_ROUTE}/${uuid}/persist-record`, // get
         PUBLISH_PERSIST_RECORD: (uuid: string) =>
