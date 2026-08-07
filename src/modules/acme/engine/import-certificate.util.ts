@@ -96,8 +96,9 @@ function readDomains(certificate: X509Certificate): string[] {
         return [...new Set(domains)];
     }
 
-    // Certificates old enough to have no SAN still exist in private PKIs.
-    const commonName = certificate.subject
+    // Certificates old enough to have no SAN still exist in private PKIs. An
+    // empty subject comes back as undefined, not as an empty string.
+    const commonName = (certificate.subject ?? '')
         .split('\n')
         .map((line) => line.trim())
         .find((line) => line.startsWith('CN='))

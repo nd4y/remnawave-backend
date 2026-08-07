@@ -47,11 +47,10 @@ export class GetCertificatesForNodeHandler
 
                 try {
                     result.push({
-                        commonName: new X509Certificate(certificate.fullchainPem).subject
-                            .split('\n')
-                            .map((line) => line.trim())
-                            .find((line) => line.startsWith('CN='))
-                            ?.slice(3) ?? certificate.domains[0],
+                        commonName: readCommonName(
+                            new X509Certificate(certificate.fullchainPem),
+                        ),
+                        domains: certificate.domains,
                         certificate: toPemLines(certificate.fullchainPem),
                         key: toPemLines(this.secretBox.decrypt(certificate.keyEncrypted)),
                         fingerprint: certificate.fingerprint ?? '',
@@ -74,6 +73,21 @@ export class GetCertificatesForNodeHandler
             return fail(ERRORS.GET_ACME_CERTIFICATES_ERROR);
         }
     }
+}
+
+/**
+ * The subject common name, or null — modern certificates often carry only SAN,
+ * and an empty subject comes back as undefined rather than an empty string.
+ */
+function readCommonName(certificate: X509Certificate): null | string {
+    return (
+        (certificate.subject ?? '')
+            .split('\n')
+            .map((line) => line.trim())
+            .find((line) => line.startsWith('CN='))
+            ?.slice(3)
+            .toLowerCase() ?? null
+    );
 }
 
 /** Xray takes inline certificates as an array of lines, blank ones dropped. */

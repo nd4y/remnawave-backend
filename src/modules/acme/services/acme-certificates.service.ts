@@ -177,6 +177,34 @@ export class AcmeCertificatesService {
                 }
             }
 
+            // Everything an imported certificate says about itself was read from
+            // its PEM. Accepting these fields would let the record drift from the
+            // material nodes actually serve, so only name, enabled and bindings
+            // are editable; the rest changes by uploading a new certificate.
+            if (certificate.source === ACME_CERTIFICATE_SOURCE.IMPORTED) {
+                const rejected = (
+                    [
+                        'domains',
+                        'challengeType',
+                        'keyType',
+                        'renewBeforeDays',
+                        'directoryUrl',
+                        'email',
+                        'eabKid',
+                        'eabHmacKey',
+                        'credentialUuid',
+                    ] as const
+                ).filter((field) => dto[field] !== undefined);
+
+                if (rejected.length > 0) {
+                    return fail(
+                        ERRORS.ACME_INVALID_CERTIFICATE_REQUEST.withMessage(
+                            `${rejected.join(', ')}: read from the imported certificate itself; upload new material to change them`,
+                        ),
+                    );
+                }
+            }
+
             // An imported certificate has nothing to re-issue: its material is
             // whatever was uploaded, and only a new upload replaces it.
             const needsReissue =

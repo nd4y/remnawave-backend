@@ -47,9 +47,7 @@ export function injectNodeCertificates(
                 key: certificate.key,
             };
 
-            const index = existing.findIndex(
-                (candidate) => readCommonName(candidate) === certificate.commonName,
-            );
+            const index = existing.findIndex((candidate) => isSameCertificate(candidate, certificate));
 
             if (index === -1) {
                 existing.push(entry);
@@ -80,7 +78,7 @@ export function getCertificatesFingerprint(certificates: INodeCertificate[]): st
     }
 
     const material = certificates
-        .map((certificate) => `${certificate.commonName}:${certificate.fingerprint}`)
+        .map((certificate) => `${certificate.domains.join(',')}:${certificate.fingerprint}`)
         .sort()
         .join('|');
 
@@ -88,30 +86,64 @@ export function getCertificatesFingerprint(certificates: INodeCertificate[]): st
 }
 
 /**
- * The common name of an inline certificate, or null when it cannot be read.
- * Parsing is deliberately lenient: a hand-written entry that is not valid PEM
+ * Whether an entry already on the inbound is the same certificate, and should be
+ * replaced rather than joined by a second copy.
+ *
+ * Names, not the common name alone: certificates that carry only SAN have no
+ * common name to compare, and matching on it alone would leave the old entry in
+ * place next to the new one, with Xray free to serve either.
+ *
+ * Parsing is deliberately lenient — a hand-written entry that is not valid PEM
  * must not break the whole config.
  */
-function readCommonName(certificate: TLSCertConfig): null | string {
-    const pem = Array.isArray(certificate.certificate)
-        ? certificate.certificate.join('\n')
-        : certificate.certificate;
+function isSameCertificate(entry: TLSCertConfig, candidate: INodeCertificate): boolean {
+    const pem = Array.isArray(entry.certificate) ? entry.certificate.join('\n') : entry.certificate;
 
     if (!pem) {
-        return null;
+        return false;
     }
+
+    let parsed: X509Certificate;
 
     try {
-        const subject = new X509Certificate(pem).subject;
-
-        return (
-            subject
-                .split('\n')
-                .map((line) => line.trim())
-                .find((line) => line.startsWith('CN='))
-                ?.slice(3) ?? null
-        );
+        parsed = new X509Certificate(pem);
     } catch {
-        return null;
+        return false;
     }
+
+    const names = readNames(parsed);
+    const wanted = new Set(candidate.domains.map((domain) => domain.toLowerCase()));
+
+    if (candidate.commonName) {
+        wanted.add(candidate.commonName.toLowerCase());
+    }
+
+    return names.some((name) => wanted.has(name));
+}
+
+/**
+ * Common name plus every DNS SAN, lowercased.
+ *
+ * Both fields are optional at runtime: a certificate with an empty subject —
+ * which is what a SAN-only certificate has — reports `subject` as undefined.
+ */
+function readNames(certificate: X509Certificate): string[] {
+    const names = (certificate.subjectAltName ?? '')
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.startsWith('DNS:'))
+        .map((entry) => entry.slice('DNS:'.length).toLowerCase());
+
+    const commonName = (certificate.subject ?? '')
+        .split('\n')
+        .map((line) => line.trim())
+        .find((line) => line.startsWith('CN='))
+        ?.slice(3)
+        .toLowerCase();
+
+    if (commonName) {
+        names.push(commonName);
+    }
+
+    return names;
 }
