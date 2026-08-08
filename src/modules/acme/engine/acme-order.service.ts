@@ -146,8 +146,14 @@ export class AcmeOrderService {
                 await this.createPrivateKey(certificate.keyType),
             );
 
-            await client.finalizeOrder(order, csr);
-            const fullchain = await client.getCertificate(order);
+            // getCertificate must see the order state AFTER finalization. The
+            // object from createOrder is stale: when the CA reused still-valid
+            // authorizations, it reads status 'ready' - which acme-client treats
+            // as "no need to refresh" - and then finds no certificate URL on it.
+            // Renewals within the authorization lifetime (~30 days at LE) always
+            // hit that path.
+            const finalizedOrder = await client.finalizeOrder(order, csr);
+            const fullchain = await client.getCertificate(finalizedOrder);
 
             const affectedNodeUuids = await this.store(certificate, fullchain, key.toString());
 
