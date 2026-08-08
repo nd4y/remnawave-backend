@@ -9,8 +9,12 @@ import { IssueCertificateCommand } from '@modules/acme/commands/issue-certificat
 import { QUEUES_NAMES } from '../queue.enum';
 import { ACME_JOB_NAMES } from './constants';
 
+// Orders spend most of their time waiting on DNS propagation, so running them
+// in parallel is nearly free. Four keeps a full batch well inside the DNS
+// broker's per-client rate limit; jobId = certificateUuid still guarantees one
+// order per certificate at a time.
 @Processor(QUEUES_NAMES.ACME.ISSUE, {
-    concurrency: 1,
+    concurrency: 4,
 })
 export class AcmeQueueProcessor extends WorkerHost {
     private readonly logger = new Logger(AcmeQueueProcessor.name);

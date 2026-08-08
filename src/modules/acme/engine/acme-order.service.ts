@@ -1,3 +1,4 @@
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import * as acme from 'acme-client';
 import { createHash, X509Certificate } from 'node:crypto';
 
@@ -77,7 +78,11 @@ export class AcmeOrderService {
         if (!this.secretBox.isConfigured) {
             await this.fail(certificate, 'ACME_SECRET_KEY is not configured');
 
-            return { isIssued: false, message: 'ACME_SECRET_KEY is not configured', affectedNodeUuids: [] };
+            return {
+                isIssued: false,
+                message: 'ACME_SECRET_KEY is not configured',
+                affectedNodeUuids: [],
+            };
         }
 
         const published: IPublishedRecord[] = [];
@@ -167,7 +172,18 @@ export class AcmeOrderService {
                     try {
                         await solver.cleanup(record.fqdn, record.value);
                     } catch (error) {
+                        // The certificate may already be issued, but a record left
+                        // in the zone is an operator problem: without an event the
+                        // journal shows a clean success and nobody goes looking.
                         this.logger.warn(`Failed to clean up ${record.fqdn}: ${error}`);
+
+                        await this.eventsRepository
+                            .create(
+                                certificate.uuid,
+                                ACME_EVENT_LEVEL.ERROR,
+                                `Failed to remove ${record.fqdn} after the order; delete the TXT record manually`,
+                            )
+                            .catch(() => {});
                     }
                 }
             }
@@ -197,12 +213,28 @@ export class AcmeOrderService {
         if (!account) {
             const accountKey = await acme.crypto.createPrivateEcdsaKey('P-256');
 
-            account = await this.accountsRepository.create({
-                directoryUrl,
-                email,
-                accountKeyEncrypted: this.secretBox.encrypt(accountKey.toString()),
-                eabKid: certificate.eabKid,
-            });
+            try {
+                account = await this.accountsRepository.create({
+                    directoryUrl,
+                    email,
+                    accountKeyEncrypted: this.secretBox.encrypt(accountKey.toString()),
+                    eabKid: certificate.eabKid,
+                });
+            } catch (error) {
+                // Parallel orders race to register the same (directory, email)
+                // account; the loser takes the winner's row and discards its own
+                // key. Registering with a shared key is idempotent on the CA side.
+                if (error instanceof PrismaClientKnownRequestError && error.code === 'P2002') {
+                    account = await this.accountsRepository.findByDirectoryAndEmail(
+                        directoryUrl,
+                        email,
+                    );
+                }
+
+                if (!account) {
+                    throw error;
+                }
+            }
         }
 
         const client = new acme.Client({
