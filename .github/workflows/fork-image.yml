@@ -38,10 +38,15 @@ jobs:
           echo "frontend_url=https://github.com/${{ github.repository_owner }}/remnawave-frontend/releases/download/${GITHUB_REF_NAME}/remnawave-frontend.zip" >> "$GITHUB_OUTPUT"
 
       - name: Wait for the UI asset to exist
+        # A HEAD probe is not enough: freshly uploaded release assets have been
+        # seen answering 404 to the very next GET, and the Dockerfile's curl has
+        # no -f, so that 404 body would end up unzipped as the UI. Download the
+        # whole file and prove it is a zip before letting the build start.
         run: |
           for _ in $(seq 1 60); do
-            if curl -fsSLI -o /dev/null "${{ steps.meta.outputs.frontend_url }}"; then
-              echo 'UI build is published'
+            if curl -fsSL -o /tmp/ui.zip "${{ steps.meta.outputs.frontend_url }}" \
+                && unzip -tq /tmp/ui.zip > /dev/null 2>&1; then
+              echo 'UI build is published and the archive is intact'
               exit 0
             fi
             sleep 20
