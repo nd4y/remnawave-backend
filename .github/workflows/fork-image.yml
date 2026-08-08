@@ -1,18 +1,12 @@
 name: Build fork image
 
-# Manual only, for the same reason as the UI workflow: the inherited upstream
-# workflows push to remnawave/* and would fail here.
+# Fork tags only, for the same reasons as the UI workflow. The image tag is the
+# git tag without its leading "v", and the UI comes from the frontend fork's
+# release of the same tag - so one tag name produces a matching pair.
 on:
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Image tag (e.g. 3.2.1-acme.1)'
-        required: true
-        type: string
-      frontend_url:
-        description: 'URL of remnawave-frontend.zip built from the frontend fork'
-        required: true
-        type: string
+  push:
+    tags:
+      - 'v*-acme*'
 
 permissions:
   contents: read
@@ -35,19 +29,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Read backend version
+      - name: Resolve tags and the matching UI build
         id: meta
-        run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+          echo "frontend_url=https://github.com/${{ github.repository_owner }}/remnawave-frontend/releases/download/${GITHUB_REF_NAME}/remnawave-frontend.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the UI asset to exist
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsSLI -o /dev/null "${{ steps.meta.outputs.frontend_url }}"; then
+              echo 'UI build is published'
+              exit 0
+            fi
+            sleep 20
+          done
+          echo 'the frontend fork has not published this tag; run its workflow first' >&2
+          exit 1
 
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ${{ env.IMAGE }}:${{ inputs.tag }}
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
             ${{ env.IMAGE }}:latest
           build-args: |
-            FRONTEND_URL=${{ inputs.frontend_url }}
+            FRONTEND_URL=${{ steps.meta.outputs.frontend_url }}
             __RW_METADATA_VERSION=${{ steps.meta.outputs.version }}-acme
             __RW_METADATA_GIT_BACKEND_COMMIT=${{ github.sha }}
             __RW_METADATA_GIT_BRANCH=${{ github.ref_name }}
@@ -56,5 +66,6 @@ jobs:
 
       - name: Summary
         run: |
-          echo "### ${{ env.IMAGE }}:${{ inputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}" >> "$GITHUB_STEP_SUMMARY"
           echo "built from ${{ github.ref_name }} @ ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "UI: ${{ steps.meta.outputs.frontend_url }}" >> "$GITHUB_STEP_SUMMARY"
