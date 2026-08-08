@@ -90,7 +90,10 @@ back as `{"error": "<machine_code>", "message": "<text>"}`.
 
 The broker decides which names the token may touch and holds the real DNS
 credential; the panel never sees it. A ready-made implementation is
-[acme-proxy](https://github.com/nd4y/acme-proxy).
+[acme-proxy](https://github.com/nd4y/acme-proxy); its README specifies
+[the same protocol from the broker side](https://github.com/nd4y/acme-proxy#the-protocol)
+— response shapes, status codes and which endpoints an alternative broker
+may omit.
 
 ## Importing a certificate the panel did not issue
 
