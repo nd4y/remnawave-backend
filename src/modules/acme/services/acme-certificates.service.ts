@@ -13,20 +13,13 @@ import {
 import { AcmeQueueService } from '@queue/_acme';
 import { NodesQueuesService } from '@queue/_nodes';
 
+import { AcmeSecretBoxService } from '../crypto/acme-secret-box.service';
 import {
     CreateAcmeCertificateBodyDto,
     ImportAcmeCertificateBodyDto,
     ReimportAcmeCertificateBodyDto,
     UpdateAcmeCertificateBodyDto,
 } from '../dtos';
-import {
-    AcmeCertificateResponseModel,
-    AcmeEventResponseModel,
-    AcmePersistRecordResponseModel,
-    GetAcmeCertificateEventsResponseModel,
-    GetAcmeCertificatesResponseModel,
-} from '../models';
-import { AcmeSecretBoxService } from '../crypto/acme-secret-box.service';
 import { AcmeOrderService } from '../engine/acme-order.service';
 import { isTxtValuePublished } from '../engine/dns-propagation.util';
 import { parseCertificateMaterial } from '../engine/import-certificate.util';
@@ -36,6 +29,13 @@ import {
     resolveIssuerDomain,
 } from '../engine/persist-record.util';
 import { SolverFactory } from '../engine/solvers/solver.factory';
+import {
+    AcmeCertificateResponseModel,
+    AcmeEventResponseModel,
+    AcmePersistRecordResponseModel,
+    GetAcmeCertificateEventsResponseModel,
+    GetAcmeCertificatesResponseModel,
+} from '../models';
 import { AcmeCertificatesRepository } from '../repositories/acme-certificates.repository';
 import { AcmeCredentialsRepository } from '../repositories/acme-credentials.repository';
 import { AcmeEventsRepository } from '../repositories/acme-events.repository';
@@ -255,6 +255,18 @@ export class AcmeCertificatesService {
                 return ok(new AcmeCertificateResponseModel(refreshed ?? updated));
             }
 
+            // Delivery happens at config-render time, so a binding or enable-flag
+            // change is invisible until the node restarts. Nodes REMOVED from the
+            // bindings restart too - that is what makes them stop serving the key.
+            // A certificate that never had material changes no config; skip those.
+            const bindingsTouched = dto.nodes !== undefined || dto.isEnabled !== undefined;
+
+            if (bindingsTouched && certificate.fingerprint) {
+                await this.restartBoundNodes({
+                    nodes: [...certificate.nodes, ...updated.nodes],
+                });
+            }
+
             return ok(new AcmeCertificateResponseModel(updated));
         } catch (error) {
             if (error instanceof PrismaClientKnownRequestError && error.code === 'P2003') {
@@ -287,9 +299,7 @@ export class AcmeCertificatesService {
         }
     }
 
-    public async getEvents(
-        uuid: string,
-    ): Promise<TResult<GetAcmeCertificateEventsResponseModel>> {
+    public async getEvents(uuid: string): Promise<TResult<GetAcmeCertificateEventsResponseModel>> {
         try {
             const certificate = await this.certificatesRepository.findByUUID(uuid);
 
@@ -556,9 +566,7 @@ export class AcmeCertificatesService {
     }
 
     /** Delivery happens when a node rebuilds its config, so a restart is what applies new material. */
-    private async restartBoundNodes(certificate: {
-        nodes: { nodeUuid: string }[];
-    }): Promise<void> {
+    private async restartBoundNodes(certificate: { nodes: { nodeUuid: string }[] }): Promise<void> {
         for (const nodeUuid of new Set(certificate.nodes.map((binding) => binding.nodeUuid))) {
             await this.nodesQueuesService.startNode({ nodeUuid });
         }
