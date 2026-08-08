@@ -17,9 +17,10 @@ import { IssueCertificateCommand } from './issue-certificate.command';
  * queues and modules from importing each other.
  */
 @CommandHandler(IssueCertificateCommand)
-export class IssueCertificateHandler
-    implements ICommandHandler<IssueCertificateCommand, TResult<IIssueResult>>
-{
+export class IssueCertificateHandler implements ICommandHandler<
+    IssueCertificateCommand,
+    TResult<IIssueResult>
+> {
     private readonly logger = new Logger(IssueCertificateHandler.name);
 
     constructor(
@@ -29,7 +30,10 @@ export class IssueCertificateHandler
 
     async execute(command: IssueCertificateCommand): Promise<TResult<IIssueResult>> {
         try {
-            const result = await this.acmeOrderService.issue(command.certificateUuid, command.force);
+            const result = await this.acmeOrderService.issue(
+                command.certificateUuid,
+                command.force,
+            );
 
             for (const nodeUuid of new Set(result.affectedNodeUuids)) {
                 // The node picks the certificate up when its config is rebuilt, so

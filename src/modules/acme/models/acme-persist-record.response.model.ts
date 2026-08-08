@@ -9,12 +9,7 @@ export class AcmePersistRecordResponseModel {
     public isPublished: boolean;
     public canPublish: boolean;
 
-    constructor(data: {
-        canPublish: boolean;
-        isPublished: boolean;
-        name: string;
-        value: string;
-    }) {
+    constructor(data: { canPublish: boolean; isPublished: boolean; name: string; value: string }) {
         this.name = data.name;
         this.value = data.value;
         this.isPublished = data.isPublished;
@@ -22,7 +17,7 @@ export class AcmePersistRecordResponseModel {
     }
 }
 
-/** What an acme-proxy credential reports about itself. */
+/** What a credential test reports about itself. */
 export class AcmeCredentialTestResponseModel {
     public isOk: boolean;
     public message: string;

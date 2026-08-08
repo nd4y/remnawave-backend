@@ -34,9 +34,12 @@ export namespace UpdateAcmeCredentialCommand {
                 ),
         ),
 
-        baseUrl: z.optional(z.url()),
-        token: z.optional(z.string().min(1)),
-        apiToken: z.optional(z.string().min(1)),
+        /**
+         * Provider configuration keyed by ACME_PROVIDER_REGISTRY field keys.
+         * Only the keys present are touched; an empty string keeps the stored
+         * value (that is what an untouched secret input submits as).
+         */
+        config: z.optional(z.record(z.string(), z.string())),
     });
 
     export const ResponseSchema = z.object({

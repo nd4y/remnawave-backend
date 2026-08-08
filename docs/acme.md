@@ -43,16 +43,30 @@ the certificate is injected into the config of each bound node as it is sent.
 
 2. Open **Management → Certificates → Credentials** and add one:
 
-   | Provider | What the panel stores | When to use it |
-   | --- | --- | --- |
-   | `ACME_PROXY` | base URL and a client token | Preferred. The DNS provider credentials and the domain policy stay on [acme-proxy](https://github.com/nd4y/acme-proxy); a compromised panel can only create ACME validation records for allowed names. |
-   | `CLOUDFLARE` | an API token | Simple, but the token can edit every record in its zones, from an internet-facing service. |
-   | `MANUAL` | nothing | Pairs with dns-persist-01: one record is published by hand and renewals need no DNS access. It cannot answer dns-01. |
+   | Provider | What the panel stores |
+   | --- | --- |
+   | `CLOUDFLARE` | API token (Zone:Read, DNS:Edit) |
+   | `DESEC` | API token |
+   | `DIGITALOCEAN` | API token |
+   | `GANDI` | personal access token |
+   | `HETZNER` | dns.hetzner.com API token |
+   | `PORKBUN` | API key + secret API key |
+   | `POWERDNS` | API URL, API key, server id |
+   | `VULTR` | API key |
+   | `CUSTOM` | URL and a client token of a DNS broker (see below) |
+   | `MANUAL` | nothing |
 
-   The **Test** action reports whether the credential works and, for acme-proxy,
-   which domains it is allowed to touch — worth doing before the first issuance,
-   because otherwise an allow-list mismatch shows up as a failed order weeks
-   later.
+   Every DNS provider token stored here can edit records in its zones, and the
+   panel is an internet-facing service — that is the price of dns-01. Two ways
+   around it: `CUSTOM`, which moves the real credential to a broker with its own
+   domain policy, and `MANUAL`, which pairs with dns-persist-01 (one record
+   published by hand, renewals need no DNS access at all; it cannot answer
+   dns-01).
+
+   The **Test** action reports whether the credential works, which zones it
+   sees and — for brokers — which domains it may touch. Worth doing before the
+   first issuance: an allow-list mismatch otherwise shows up as a failed order
+   weeks later.
 
 3. Add a certificate. It defaults to a **staging** CA: rehearse a new name there
    first, then switch to production. Staging endpoints for every supported CA are
@@ -60,6 +74,23 @@ the certificate is injected into the config of each bound node as it is sent.
 
 4. Bind it to nodes and press **Issue now**. The order runs in the background;
    the status and the log in the details drawer show what happened.
+
+## The custom provider protocol
+
+A `CUSTOM` credential points at any HTTP service implementing four endpoints.
+All requests carry `Authorization: Bearer <token>` and JSON bodies; errors come
+back as `{"error": "<machine_code>", "message": "<text>"}`.
+
+| Method and path | Body | Semantics |
+| --- | --- | --- |
+| `POST /v1/dns-01/present` | `{"fqdn": "_acme-challenge.a.example.com", "value": "<txt>"}` | create the TXT record; must be idempotent for the same pair |
+| `POST /v1/dns-01/cleanup` | same | remove it; a record that is already gone is not an error |
+| `PUT /v1/persist` | `{"fqdn": "_validation-persist.a.example.com", "value": "..."}` | upsert the dns-persist-01 record (one per name) |
+| `GET /v1/policy` | — | optional; what the **Test** action shows: `{"allow": [...], "provider": {"name", "type", "zones": [...]}}` |
+
+The broker decides which names the token may touch and holds the real DNS
+credential; the panel never sees it. A ready-made implementation is
+[acme-proxy](https://github.com/nd4y/acme-proxy).
 
 ## Importing a certificate the panel did not issue
 

@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { ACME_ROUTES, REST_API } from '../../../api';
 import { getEndpointDetails } from '../../../constants';
 import { AcmeCertificateSchema } from '../../../models';
-
 import { AcmePemMaterialSchema } from './import-acme-certificate.command';
 
 export namespace ReimportAcmeCertificateCommand {

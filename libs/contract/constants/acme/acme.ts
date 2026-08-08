@@ -1,23 +1,208 @@
 export const ACME_PROVIDER = {
-    /**
-     * An acme-proxy instance. The panel holds only a scoped client token; the DNS
-     * provider credentials stay on the proxy.
-     */
-    ACME_PROXY: 'ACME_PROXY',
-    /**
-     * A Cloudflare API token stored in the panel. Simpler, but the panel then
-     * holds a credential with edit rights on the whole zone.
-     */
     CLOUDFLARE: 'CLOUDFLARE',
+    /**
+     * A generic HTTP DNS API (see docs/acme.md for the protocol). Lets the
+     * DNS credential live outside the panel: the panel holds only the broker's
+     * URL and a client token scoped by the broker's own policy.
+     */
+    CUSTOM: 'CUSTOM',
+    DESEC: 'DESEC',
+    DIGITALOCEAN: 'DIGITALOCEAN',
+    GANDI: 'GANDI',
+    HETZNER: 'HETZNER',
     /**
      * No automation: the panel shows the record and waits for it to be published.
      */
     MANUAL: 'MANUAL',
+    PORKBUN: 'PORKBUN',
+    POWERDNS: 'POWERDNS',
+    VULTR: 'VULTR',
 } as const;
 
 export type TAcmeProvider = (typeof ACME_PROVIDER)[keyof typeof ACME_PROVIDER];
 
 export const ACME_PROVIDERS = Object.values(ACME_PROVIDER) as [TAcmeProvider, ...TAcmeProvider[]];
+
+export interface IAcmeProviderField {
+    key: string;
+    label: string;
+    /** Write-only: stored encrypted, never returned by the API. */
+    secret: boolean;
+    required: boolean;
+    placeholder?: string;
+    description?: string;
+}
+
+export interface IAcmeProviderInfo {
+    provider: TAcmeProvider;
+    label: string;
+    description?: string;
+    fields: IAcmeProviderField[];
+}
+
+/**
+ * Single source of truth for what each provider needs. The backend validates
+ * credential payloads against it; the UI renders the credential form from it.
+ */
+export const ACME_PROVIDER_REGISTRY: IAcmeProviderInfo[] = [
+    {
+        provider: ACME_PROVIDER.CLOUDFLARE,
+        label: 'Cloudflare',
+        fields: [
+            {
+                key: 'apiToken',
+                label: 'API token',
+                secret: true,
+                required: true,
+                placeholder: 'Cloudflare API token',
+                description: 'Needs Zone:Read and DNS:Edit',
+            },
+        ],
+    },
+    {
+        provider: ACME_PROVIDER.DESEC,
+        label: 'deSEC',
+        fields: [
+            {
+                key: 'apiToken',
+                label: 'API token',
+                secret: true,
+                required: true,
+                placeholder: 'deSEC token',
+            },
+        ],
+    },
+    {
+        provider: ACME_PROVIDER.DIGITALOCEAN,
+        label: 'DigitalOcean',
+        fields: [
+            {
+                key: 'apiToken',
+                label: 'API token',
+                secret: true,
+                required: true,
+                placeholder: 'DigitalOcean personal access token',
+                description: 'Needs domain read and write',
+            },
+        ],
+    },
+    {
+        provider: ACME_PROVIDER.GANDI,
+        label: 'Gandi LiveDNS',
+        fields: [
+            {
+                key: 'apiToken',
+                label: 'Personal access token',
+                secret: true,
+                required: true,
+                placeholder: 'Gandi PAT',
+                description: 'Needs "Manage domain name technical configurations"',
+            },
+        ],
+    },
+    {
+        provider: ACME_PROVIDER.HETZNER,
+        label: 'Hetzner DNS',
+        fields: [
+            {
+                key: 'apiToken',
+                label: 'API token',
+                secret: true,
+                required: true,
+                placeholder: 'dns.hetzner.com API token',
+            },
+        ],
+    },
+    {
+        provider: ACME_PROVIDER.PORKBUN,
+        label: 'Porkbun',
+        fields: [
+            {
+                key: 'apiKey',
+                label: 'API key',
+                secret: true,
+                required: true,
+                placeholder: 'pk1_…',
+            },
+            {
+                key: 'secretApiKey',
+                label: 'Secret API key',
+                secret: true,
+                required: true,
+                placeholder: 'sk1_…',
+            },
+        ],
+    },
+    {
+        provider: ACME_PROVIDER.POWERDNS,
+        label: 'PowerDNS',
+        fields: [
+            {
+                key: 'baseUrl',
+                label: 'API URL',
+                secret: false,
+                required: true,
+                placeholder: 'http://powerdns:8081',
+            },
+            {
+                key: 'apiKey',
+                label: 'API key',
+                secret: true,
+                required: true,
+            },
+            {
+                key: 'serverId',
+                label: 'Server ID',
+                secret: false,
+                required: false,
+                placeholder: 'localhost',
+                description: 'Leave empty for the default server',
+            },
+        ],
+    },
+    {
+        provider: ACME_PROVIDER.VULTR,
+        label: 'Vultr',
+        fields: [
+            {
+                key: 'apiToken',
+                label: 'API key',
+                secret: true,
+                required: true,
+                placeholder: 'Vultr API key',
+            },
+        ],
+    },
+    {
+        provider: ACME_PROVIDER.CUSTOM,
+        label: 'Custom (HTTP API)',
+        description:
+            'A DNS broker speaking the simple HTTP protocol from the documentation. Keeps the real DNS credential outside the panel.',
+        fields: [
+            {
+                key: 'baseUrl',
+                label: 'URL',
+                secret: false,
+                required: true,
+                placeholder: 'http://dns-broker:8080',
+            },
+            {
+                key: 'token',
+                label: 'Token',
+                secret: true,
+                required: true,
+                placeholder: 'Client token',
+            },
+        ],
+    },
+    {
+        provider: ACME_PROVIDER.MANUAL,
+        label: 'Manual',
+        description:
+            'Nothing is published automatically. Pairs with dns-persist-01, where one record is added by hand; it cannot answer dns-01.',
+        fields: [],
+    },
+];
 
 export const ACME_CERTIFICATE_SOURCE = {
     /** Ordered and renewed by the panel. */

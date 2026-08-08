@@ -1,10 +1,9 @@
 import axios, { AxiosInstance, isAxiosError } from 'axios';
 
-import { IAcmeProxyCredentialPayload } from '../../interfaces/credential-payload.interface';
 import { IDnsSolver, IDnsSolverDescription } from './solver.interface';
 
-// Cloudflare has been observed taking 30+ seconds on a single record write;
-// 15s produced spurious ERRORs during the production migration.
+// DNS providers have been observed taking 30+ seconds on a single record
+// write; 15s produced spurious ERRORs during a production migration.
 const REQUEST_TIMEOUT_MS = 60_000;
 
 interface IPolicyResponse {
@@ -13,17 +12,18 @@ interface IPolicyResponse {
 }
 
 /**
- * Talks to an acme-proxy instance. The proxy owns the DNS provider credentials
- * and the domain policy; this side only knows a base URL and a client token.
+ * A DNS broker speaking the custom-provider HTTP protocol (see docs/acme.md).
+ * The broker owns the real DNS credential and decides which names may be
+ * touched; this side only knows a base URL and a client token.
  */
-export class AcmeProxySolver implements IDnsSolver {
+export class CustomSolver implements IDnsSolver {
     public readonly canPublish = true;
 
     private readonly client: AxiosInstance;
 
-    constructor(payload: IAcmeProxyCredentialPayload) {
+    constructor(payload: Record<string, string>) {
         this.client = axios.create({
-            baseURL: payload.baseUrl,
+            baseURL: payload.baseUrl.replace(/\/+$/, ''),
             timeout: REQUEST_TIMEOUT_MS,
             headers: {
                 Authorization: `Bearer ${payload.token}`,
@@ -50,7 +50,7 @@ export class AcmeProxySolver implements IDnsSolver {
 
             return {
                 isOk: true,
-                message: `Proxy reachable, provider "${data.provider.name}" (${data.provider.type})`,
+                message: `Endpoint reachable, provider "${data.provider.name}" (${data.provider.type})`,
                 allow: data.allow ?? [],
                 zones: data.provider?.zones ?? [],
             };
@@ -77,21 +77,21 @@ export class AcmeProxySolver implements IDnsSolver {
     }
 
     /**
-     * acme-proxy answers with a machine code and a message; surfacing both makes
-     * "the domain is not in the allow list" readable in the certificate log
-     * instead of a bare 403.
+     * The protocol answers with a machine code and a message; surfacing both
+     * makes "the domain is not in the allow list" readable in the certificate
+     * log instead of a bare 403.
      */
     private describeError(error: unknown): string {
         if (isAxiosError(error)) {
             const data = error.response?.data as undefined | { error?: string; message?: string };
 
             if (data?.error) {
-                return `acme-proxy: ${data.error}: ${data.message ?? ''}`.trim();
+                return `dns-api: ${data.error}: ${data.message ?? ''}`.trim();
             }
 
-            return `acme-proxy: ${error.message}`;
+            return `dns-api: ${error.message}`;
         }
 
-        return `acme-proxy: ${String(error)}`;
+        return `dns-api: ${String(error)}`;
     }
 }

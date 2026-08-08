@@ -119,7 +119,9 @@ function readKeyType(certificate: X509Certificate): TAcmeKeyType {
     }
 
     if (key.asymmetricKeyType === 'rsa') {
-        return (details.modulusLength ?? 0) >= 4096 ? ACME_KEY_TYPE.RSA_4096 : ACME_KEY_TYPE.RSA_2048;
+        return (details.modulusLength ?? 0) >= 4096
+            ? ACME_KEY_TYPE.RSA_4096
+            : ACME_KEY_TYPE.RSA_2048;
     }
 
     return ACME_KEY_TYPE.ECDSA_P256;

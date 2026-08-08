@@ -8,15 +8,13 @@ import { ERRORS } from '@libs/contracts/constants';
 
 import { AcmeSecretBoxService } from '../../crypto/acme-secret-box.service';
 import { AcmeCertificatesRepository } from '../../repositories/acme-certificates.repository';
-import {
-    GetCertificatesForNodeQuery,
-    INodeCertificate,
-} from './get-certificates-for-node.query';
+import { GetCertificatesForNodeQuery, INodeCertificate } from './get-certificates-for-node.query';
 
 @QueryHandler(GetCertificatesForNodeQuery)
-export class GetCertificatesForNodeHandler
-    implements IQueryHandler<GetCertificatesForNodeQuery, TResult<INodeCertificate[]>>
-{
+export class GetCertificatesForNodeHandler implements IQueryHandler<
+    GetCertificatesForNodeQuery,
+    TResult<INodeCertificate[]>
+> {
     private readonly logger = new Logger(GetCertificatesForNodeHandler.name);
 
     constructor(
@@ -47,9 +45,7 @@ export class GetCertificatesForNodeHandler
 
                 try {
                     result.push({
-                        commonName: readCommonName(
-                            new X509Certificate(certificate.fullchainPem),
-                        ),
+                        commonName: readCommonName(new X509Certificate(certificate.fullchainPem)),
                         domains: certificate.domains,
                         certificate: toPemLines(certificate.fullchainPem),
                         key: toPemLines(this.secretBox.decrypt(certificate.keyEncrypted)),

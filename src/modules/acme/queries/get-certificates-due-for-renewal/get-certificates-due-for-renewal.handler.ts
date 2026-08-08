@@ -9,9 +9,10 @@ import { AcmeCertificatesRepository } from '../../repositories/acme-certificates
 import { GetCertificatesDueForRenewalQuery } from './get-certificates-due-for-renewal.query';
 
 @QueryHandler(GetCertificatesDueForRenewalQuery)
-export class GetCertificatesDueForRenewalHandler
-    implements IQueryHandler<GetCertificatesDueForRenewalQuery, TResult<AcmeCertificateEntity[]>>
-{
+export class GetCertificatesDueForRenewalHandler implements IQueryHandler<
+    GetCertificatesDueForRenewalQuery,
+    TResult<AcmeCertificateEntity[]>
+> {
     private readonly logger = new Logger(GetCertificatesDueForRenewalHandler.name);
 
     constructor(private readonly certificatesRepository: AcmeCertificatesRepository) {}

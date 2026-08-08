@@ -3,26 +3,26 @@ import { TAcmeProvider } from '@libs/contracts/constants';
 import { AcmeCredentialEntity } from '../entities';
 
 /**
- * Credentials as seen from outside. The stored secret never appears here — only
- * whether one is set, plus the non-secret base URL of an acme-proxy so the UI can
- * show which proxy a credential points at.
+ * Credentials as seen from outside. Secret fields never appear here — only
+ * whether a secret is stored, plus the non-secret fields (endpoints and the
+ * like) so the UI can show where a credential points.
  */
 export class AcmeCredentialResponseModel {
     public uuid: string;
     public name: string;
     public provider: TAcmeProvider;
     public hasSecret: boolean;
-    public baseUrl: null | string;
+    public config: Record<string, string>;
     public certificatesCount: number;
     public createdAt: Date;
     public updatedAt: Date;
 
-    constructor(entity: AcmeCredentialEntity, baseUrl: null | string) {
+    constructor(entity: AcmeCredentialEntity, config: Record<string, string>) {
         this.uuid = entity.uuid;
         this.name = entity.name;
         this.provider = entity.provider;
         this.hasSecret = entity.payloadEncrypted !== null;
-        this.baseUrl = baseUrl;
+        this.config = config;
         this.certificatesCount = entity.certificatesCount;
         this.createdAt = entity.createdAt;
         this.updatedAt = entity.updatedAt;

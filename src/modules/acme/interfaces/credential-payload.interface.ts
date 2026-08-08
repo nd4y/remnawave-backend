@@ -1,18 +1,6 @@
 /**
- * What is stored, encrypted, in acme_credentials.payload_encrypted. The shape
- * depends on the provider; MANUAL stores nothing.
+ * What is stored, encrypted, in acme_credentials.payload_encrypted: the
+ * provider fields from ACME_PROVIDER_REGISTRY, secret and plain alike, as one
+ * flat map. MANUAL stores nothing.
  */
-
-export interface IAcmeProxyCredentialPayload {
-    baseUrl: string;
-    token: string;
-}
-
-export interface ICloudflareCredentialPayload {
-    apiToken: string;
-}
-
-export type TAcmeCredentialPayload =
-    | IAcmeProxyCredentialPayload
-    | ICloudflareCredentialPayload
-    | Record<string, never>;
+export type TAcmeCredentialPayload = Record<string, string>;

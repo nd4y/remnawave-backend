@@ -1,22 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { fail, ok, TResult } from '@common/types';
-import { ACME_PROVIDER, ERRORS, TAcmeProvider } from '@libs/contracts/constants';
+import { ACME_PROVIDER_REGISTRY, ERRORS, TAcmeProvider } from '@libs/contracts/constants';
 
+import { AcmeSecretBoxService } from '../crypto/acme-secret-box.service';
 import { CreateAcmeCredentialBodyDto, UpdateAcmeCredentialBodyDto } from '../dtos';
+import { SolverFactory } from '../engine/solvers/solver.factory';
 import { AcmeCredentialEntity } from '../entities';
-import {
-    IAcmeProxyCredentialPayload,
-    ICloudflareCredentialPayload,
-    TAcmeCredentialPayload,
-} from '../interfaces/credential-payload.interface';
+import { TAcmeCredentialPayload } from '../interfaces/credential-payload.interface';
 import {
     AcmeCredentialResponseModel,
     AcmeCredentialTestResponseModel,
     GetAcmeCredentialsResponseModel,
 } from '../models';
-import { AcmeSecretBoxService } from '../crypto/acme-secret-box.service';
-import { SolverFactory } from '../engine/solvers/solver.factory';
 import { AcmeCredentialsRepository } from '../repositories/acme-credentials.repository';
 
 @Injectable()
@@ -58,7 +54,7 @@ export class AcmeCredentialsService {
                 return fail(ERRORS.ACME_CREDENTIAL_NAME_ALREADY_EXISTS);
             }
 
-            const payload = this.buildPayload(dto.provider, dto);
+            const payload = this.buildPayload(dto.provider, dto.config ?? {});
 
             const credential = await this.credentialsRepository.create({
                 name: dto.name,
@@ -99,7 +95,7 @@ export class AcmeCredentialsService {
             // stored, and a partial update merges into the existing payload so
             // changing only the base URL does not wipe the token.
             const current = this.readPayload(credential);
-            const merged = this.mergePayload(credential.provider, current, dto);
+            const merged = this.mergePayload(credential.provider, current, dto.config ?? {});
 
             const updated = await this.credentialsRepository.update(dto.uuid, {
                 ...(dto.name ? { name: dto.name } : {}),
@@ -140,7 +136,7 @@ export class AcmeCredentialsService {
     /**
      * Checks that the credential actually works and reports what it may do.
      *
-     * For acme-proxy this is the only way an operator sees the allow list without
+     * For broker credentials this is the only way an operator sees the allow list without
      * shell access to the proxy host — which is exactly when a certificate fails
      * with "domain is not allowed" and nobody remembers what was configured.
      */
@@ -177,74 +173,97 @@ export class AcmeCredentialsService {
     }
 
     public toResponse(credential: AcmeCredentialEntity): AcmeCredentialResponseModel {
-        return new AcmeCredentialResponseModel(credential, this.readBaseUrl(credential));
+        return new AcmeCredentialResponseModel(credential, this.readPublicConfig(credential));
     }
 
-    private readBaseUrl(credential: AcmeCredentialEntity): null | string {
-        if (credential.provider !== ACME_PROVIDER.ACME_PROXY || !credential.payloadEncrypted) {
-            return null;
+    /**
+     * The non-secret provider fields, for display. A payload that cannot be
+     * decrypted usually means ACME_SECRET_KEY was replaced; listing must still
+     * work so the operator can see and fix the credentials.
+     */
+    private readPublicConfig(credential: AcmeCredentialEntity): Record<string, string> {
+        if (!credential.payloadEncrypted) {
+            return {};
         }
 
+        const info = ACME_PROVIDER_REGISTRY.find((entry) => entry.provider === credential.provider);
+
         try {
-            const payload = this.secretBox.decryptJson<IAcmeProxyCredentialPayload>(
+            const payload = this.secretBox.decryptJson<TAcmeCredentialPayload>(
                 credential.payloadEncrypted,
             );
 
-            return payload.baseUrl ?? null;
+            const publicConfig: Record<string, string> = {};
+
+            for (const field of info?.fields ?? []) {
+                if (!field.secret && payload[field.key]) {
+                    publicConfig[field.key] = payload[field.key];
+                }
+            }
+
+            return publicConfig;
         } catch (error) {
-            // A payload that cannot be decrypted usually means ACME_SECRET_KEY was
-            // replaced. Listing credentials should still work so the operator can
-            // see and fix them.
             this.logger.error(`Failed to read credential ${credential.uuid} payload: ${error}`);
 
-            return null;
+            return {};
         }
+    }
+
+    /** Normalizes a single field value; URLs must not keep trailing slashes. */
+    private normalizeField(key: string, value: string): string {
+        return key === 'baseUrl' ? value.trim().replace(/\/+$/, '') : value.trim();
     }
 
     private buildPayload(
         provider: TAcmeProvider,
-        dto: Pick<CreateAcmeCredentialBodyDto, 'apiToken' | 'baseUrl' | 'token'>,
+        config: Record<string, string>,
     ): null | TAcmeCredentialPayload {
-        switch (provider) {
-            case ACME_PROVIDER.ACME_PROXY:
-                return {
-                    baseUrl: dto.baseUrl!.replace(/\/+$/, ''),
-                    token: dto.token!,
-                } satisfies IAcmeProxyCredentialPayload;
-            case ACME_PROVIDER.CLOUDFLARE:
-                return { apiToken: dto.apiToken! } satisfies ICloudflareCredentialPayload;
-            default:
-                return null;
+        const info = ACME_PROVIDER_REGISTRY.find((entry) => entry.provider === provider);
+
+        if (!info || info.fields.length === 0) {
+            return null;
         }
+
+        const payload: TAcmeCredentialPayload = {};
+
+        // Only registry keys are stored: whatever else arrives in config is
+        // dropped rather than persisted blindly.
+        for (const field of info.fields) {
+            const value = config[field.key];
+
+            if (value) {
+                payload[field.key] = this.normalizeField(field.key, value);
+            }
+        }
+
+        return Object.keys(payload).length > 0 ? payload : null;
     }
 
     private mergePayload(
         provider: TAcmeProvider,
         current: null | TAcmeCredentialPayload,
-        dto: UpdateAcmeCredentialBodyDto,
+        config: Record<string, string>,
     ): null | TAcmeCredentialPayload {
-        switch (provider) {
-            case ACME_PROVIDER.ACME_PROXY: {
-                const existing = (current ?? {}) as Partial<IAcmeProxyCredentialPayload>;
+        const info = ACME_PROVIDER_REGISTRY.find((entry) => entry.provider === provider);
 
-                if (!dto.baseUrl && !dto.token) {
-                    return null;
-                }
-
-                return {
-                    baseUrl: (dto.baseUrl ?? existing.baseUrl ?? '').replace(/\/+$/, ''),
-                    token: dto.token ?? existing.token ?? '',
-                } satisfies IAcmeProxyCredentialPayload;
-            }
-            case ACME_PROVIDER.CLOUDFLARE: {
-                if (!dto.apiToken) {
-                    return null;
-                }
-
-                return { apiToken: dto.apiToken } satisfies ICloudflareCredentialPayload;
-            }
-            default:
-                return null;
+        if (!info || info.fields.length === 0) {
+            return null;
         }
+
+        const merged: TAcmeCredentialPayload = { ...(current ?? {}) };
+        let touched = false;
+
+        for (const field of info.fields) {
+            const value = config[field.key];
+
+            // An empty string is what an untouched secret input submits as:
+            // it means "keep what is stored", not "erase it".
+            if (value) {
+                merged[field.key] = this.normalizeField(field.key, value);
+                touched = true;
+            }
+        }
+
+        return touched ? merged : null;
     }
 }

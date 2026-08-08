@@ -23,7 +23,7 @@ export const AcmeDomainSchema = z
 
 /**
  * Credentials never travel outwards. The response says whether a secret is
- * stored and, for acme-proxy, the non-secret base URL — enough for the UI, and
+ * stored plus the non-secret fields — enough for the UI, and
  * nothing an attacker could reuse.
  */
 export const AcmeCredentialSchema = z.object({
@@ -31,7 +31,8 @@ export const AcmeCredentialSchema = z.object({
     name: z.string(),
     provider: z.enum(ACME_PROVIDERS),
     hasSecret: z.boolean(),
-    baseUrl: z.nullable(z.string()),
+    /** Non-secret provider fields (registry keys marked secret never appear). */
+    config: z.record(z.string(), z.string()),
     certificatesCount: z.number().int(),
     createdAt: z.iso.datetime().transform((str) => new Date(str)),
     updatedAt: z.iso.datetime().transform((str) => new Date(str)),
@@ -100,7 +101,7 @@ export const AcmePersistRecordSchema = z.object({
     canPublish: z.boolean(),
 });
 
-/** What an acme-proxy credential reports about itself. */
+/** What a credential test reports about itself. */
 export const AcmeCredentialTestSchema = z.object({
     isOk: z.boolean(),
     message: z.string(),

@@ -1,13 +1,8 @@
 import { z } from 'zod';
 
 import { ACME_ROUTES, REST_API } from '../../../api';
-import {
-    ACME_CHALLENGE_TYPES,
-    ACME_KEY_TYPES,
-    getEndpointDetails,
-} from '../../../constants';
+import { ACME_CHALLENGE_TYPES, ACME_KEY_TYPES, getEndpointDetails } from '../../../constants';
 import { AcmeCertificateSchema, AcmeDomainSchema } from '../../../models';
-
 import { AcmeCertificateNodeBindingSchema } from './create-acme-certificate.command';
 
 export namespace UpdateAcmeCertificateCommand {

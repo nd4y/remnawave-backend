@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { ACME_ROUTES, REST_API } from '../../../api';
-import { ACME_PROVIDER, ACME_PROVIDERS, getEndpointDetails } from '../../../constants';
+import { ACME_PROVIDER_REGISTRY, ACME_PROVIDERS, getEndpointDetails } from '../../../constants';
 import { AcmeCredentialSchema } from '../../../models';
 
 export namespace CreateAcmeCredentialCommand {
@@ -27,39 +27,23 @@ export namespace CreateAcmeCredentialCommand {
                 ),
             provider: z.enum(ACME_PROVIDERS),
 
-            /** acme-proxy: base URL of the proxy, e.g. http://acme-proxy:8080 */
-            baseUrl: z.optional(z.url()),
-            /** acme-proxy: the client token issued by the proxy. */
-            token: z.optional(z.string().min(1)),
-
-            /** Cloudflare: an API token with Zone:Read and DNS:Edit. */
-            apiToken: z.optional(z.string().min(1)),
+            /**
+             * Provider configuration keyed by the field keys from
+             * ACME_PROVIDER_REGISTRY. Secret fields are write-only.
+             */
+            config: z.optional(z.record(z.string(), z.string())),
         })
         .superRefine((data, ctx) => {
-            if (data.provider === ACME_PROVIDER.ACME_PROXY) {
-                if (!data.baseUrl) {
+            const info = ACME_PROVIDER_REGISTRY.find((entry) => entry.provider === data.provider);
+
+            for (const field of info?.fields ?? []) {
+                if (field.required && !data.config?.[field.key]) {
                     ctx.addIssue({
                         code: 'custom',
-                        path: ['baseUrl'],
-                        message: 'baseUrl is required for ACME_PROXY credentials',
+                        path: ['config', field.key],
+                        message: `${field.key} is required for ${data.provider} credentials`,
                     });
                 }
-
-                if (!data.token) {
-                    ctx.addIssue({
-                        code: 'custom',
-                        path: ['token'],
-                        message: 'token is required for ACME_PROXY credentials',
-                    });
-                }
-            }
-
-            if (data.provider === ACME_PROVIDER.CLOUDFLARE && !data.apiToken) {
-                ctx.addIssue({
-                    code: 'custom',
-                    path: ['apiToken'],
-                    message: 'apiToken is required for CLOUDFLARE credentials',
-                });
             }
         });
 

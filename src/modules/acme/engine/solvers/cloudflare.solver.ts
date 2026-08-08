@@ -1,6 +1,6 @@
 import axios, { AxiosInstance, isAxiosError } from 'axios';
 
-import { ICloudflareCredentialPayload } from '../../interfaces/credential-payload.interface';
+import { TAcmeCredentialPayload } from '../../interfaces/credential-payload.interface';
 import { IDnsSolver, IDnsSolverDescription } from './solver.interface';
 
 const API_BASE_URL = 'https://api.cloudflare.com/client/v4';
@@ -32,7 +32,7 @@ interface ICloudflareRecord {
  *
  * This is the convenient option, not the safe one: the token can edit every
  * record in its zones, and it lives in a service published to the internet. It
- * exists so a small installation can work without running acme-proxy.
+ * exists so a small installation can work without running a DNS broker.
  */
 export class CloudflareSolver implements IDnsSolver {
     public readonly canPublish = true;
@@ -40,7 +40,7 @@ export class CloudflareSolver implements IDnsSolver {
     private readonly client: AxiosInstance;
     private readonly zoneCache = new Map<string, string>();
 
-    constructor(payload: ICloudflareCredentialPayload) {
+    constructor(payload: TAcmeCredentialPayload) {
         this.client = axios.create({
             baseURL: API_BASE_URL,
             timeout: REQUEST_TIMEOUT_MS,

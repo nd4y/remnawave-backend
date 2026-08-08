@@ -3,7 +3,7 @@
  * DNS and take it away again.
  *
  * The panel never talks to a DNS provider directly unless the operator chose to
- * store a provider token in it; with acme-proxy credentials the record is
+ * store a provider token in it; with CUSTOM (broker) credentials the record is
  * published by the proxy, and the panel holds only a scoped client token.
  */
 export interface IDnsSolver {
