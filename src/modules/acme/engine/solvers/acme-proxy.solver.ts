@@ -3,7 +3,9 @@ import axios, { AxiosInstance, isAxiosError } from 'axios';
 import { IAcmeProxyCredentialPayload } from '../../interfaces/credential-payload.interface';
 import { IDnsSolver, IDnsSolverDescription } from './solver.interface';
 
-const REQUEST_TIMEOUT_MS = 15_000;
+// Cloudflare has been observed taking 30+ seconds on a single record write;
+// 15s produced spurious ERRORs during the production migration.
+const REQUEST_TIMEOUT_MS = 60_000;
 
 interface IPolicyResponse {
     allow: string[];

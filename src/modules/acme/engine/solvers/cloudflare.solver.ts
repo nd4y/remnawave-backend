@@ -4,7 +4,9 @@ import { ICloudflareCredentialPayload } from '../../interfaces/credential-payloa
 import { IDnsSolver, IDnsSolverDescription } from './solver.interface';
 
 const API_BASE_URL = 'https://api.cloudflare.com/client/v4';
-const REQUEST_TIMEOUT_MS = 15_000;
+// Cloudflare has been observed taking 30+ seconds on a single record write;
+// 15s produced spurious ERRORs during the production migration.
+const REQUEST_TIMEOUT_MS = 60_000;
 const RECORD_TTL_SECONDS = 60;
 
 interface ICloudflareResponse<T> {
