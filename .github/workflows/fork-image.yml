@@ -1,0 +1,76 @@
+name: Build fork image
+
+# Fork tags only, for the same reasons as the UI workflow. The image tag is the
+# git tag without its leading "v", and the UI comes from the frontend fork's
+# release of the same tag - so one tag name produces a matching pair.
+on:
+  push:
+    tags:
+      - 'v*-acme*'
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Resolve tags and the matching UI build
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+          echo "frontend_url=https://github.com/${{ github.repository_owner }}/remnawave-frontend/releases/download/${GITHUB_REF_NAME}/remnawave-frontend.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the UI asset to exist
+        # A HEAD probe is not enough: freshly uploaded release assets have been
+        # seen answering 404 to the very next GET, and the Dockerfile's curl has
+        # no -f, so that 404 body would end up unzipped as the UI. Download the
+        # whole file and prove it is a zip before letting the build start.
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsSL -o /tmp/ui.zip "${{ steps.meta.outputs.frontend_url }}" \
+                && unzip -tq /tmp/ui.zip > /dev/null 2>&1; then
+              echo 'UI build is published and the archive is intact'
+              exit 0
+            fi
+            sleep 20
+          done
+          echo 'the frontend fork has not published this tag; run its workflow first' >&2
+          exit 1
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}
+            ${{ env.IMAGE }}:latest
+          build-args: |
+            FRONTEND_URL=${{ steps.meta.outputs.frontend_url }}
+            __RW_METADATA_VERSION=${{ steps.meta.outputs.version }}-acme
+            __RW_METADATA_GIT_BACKEND_COMMIT=${{ github.sha }}
+            __RW_METADATA_GIT_BRANCH=${{ github.ref_name }}
+            __RW_METADATA_BUILD_TIME=${{ github.event.repository.updated_at }}
+            __RW_METADATA_BUILD_NUMBER=${{ github.run_number }}
+
+      - name: Summary
+        run: |
+          echo "### ${{ env.IMAGE }}:${{ steps.meta.outputs.image_tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "built from ${{ github.ref_name }} @ ${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "UI: ${{ steps.meta.outputs.frontend_url }}" >> "$GITHUB_STEP_SUMMARY"
