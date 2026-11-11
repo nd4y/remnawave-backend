@@ -1,9 +1,11 @@
 name: Build fork image
 
 # Fork tags only, for the same reasons as the UI workflow. The image tag is the
-# git tag without its leading "v", and the UI comes from the frontend fork's
-# release of the same tag - so one tag name produces a matching pair.
+# git tag without its leading "v". Backend-only fixes reuse the reviewed UI
+# release, which is pinned below independently of the backend release.
 on:
+  pull_request:
+    branches: ['release/acme']
   push:
     tags:
       - 'v*-acme*'
@@ -14,9 +16,40 @@ permissions:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
+  FRONTEND_RELEASE: v3.2.1-acme.8
 
 jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.2'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Lint the shutdown fix
+        run: >-
+          npx oxlint
+          src/common/constants/shutdown-signals.ts
+          src/main.ts src/bin/processors/processors.ts
+          src/bin/processors/processors.root.module.ts
+          src/bin/scheduler/scheduler.ts src/bin/scheduler/scheduler.root.module.ts
+          test/shutdown-signals.test.cjs test/fixtures/shutdown-context.cjs
+      - name: Check formatting of the shutdown fix
+        run: >-
+          npx oxfmt --check
+          .github/workflows/fork-image.yml package.json
+          src/common/constants/shutdown-signals.ts
+          src/main.ts src/bin/processors/processors.ts
+          src/bin/processors/processors.root.module.ts
+          src/bin/scheduler/scheduler.ts src/bin/scheduler/scheduler.root.module.ts
+          test/shutdown-signals.test.cjs test/fixtures/shutdown-context.cjs
+      - run: npm run test:shutdown:native
+
   build:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +68,7 @@ jobs:
           TAG="${GITHUB_REF_NAME#v}"
           echo "image_tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
-          echo "frontend_url=https://github.com/${{ github.repository_owner }}/remnawave-frontend/releases/download/${GITHUB_REF_NAME}/remnawave-frontend.zip" >> "$GITHUB_OUTPUT"
+          echo "frontend_url=https://github.com/${{ github.repository_owner }}/remnawave-frontend/releases/download/${FRONTEND_RELEASE}/remnawave-frontend.zip" >> "$GITHUB_OUTPUT"
 
       - name: Wait for the UI asset to exist
         # A HEAD probe is not enough: freshly uploaded release assets have been

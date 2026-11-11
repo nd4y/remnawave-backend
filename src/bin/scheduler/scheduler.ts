@@ -17,6 +17,7 @@ import * as winston from 'winston';
 import { NestFactory } from '@nestjs/core';
 
 import { TypedConfigService } from '@common/config/app-config';
+import { GRACEFUL_SHUTDOWN_SIGNALS } from '@common/constants/shutdown-signals';
 import { NotFoundExceptionFilter } from '@common/exception/not-found-exception.filter';
 import { WorkerRoutesGuard } from '@common/guards/worker-routes/worker-routes.guard';
 import { customLogFilter } from '@common/utils/filter-logs/filter-logs';
@@ -91,7 +92,7 @@ async function bootstrap(): Promise<void> {
         new WorkerRoutesGuard({ allowedPaths: [METRICS_ROOT, BULLBOARD_ROOT, HEALTH_ROOT] }),
     );
 
-    app.enableShutdownHooks();
+    app.enableShutdownHooks(GRACEFUL_SHUTDOWN_SIGNALS);
 
     await app.listen(config.getOrThrow('METRICS_PORT'));
 
