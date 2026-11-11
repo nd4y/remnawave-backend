@@ -32,7 +32,9 @@
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "check": "oxfmt --check && oxlint",
-    "fix": "oxfmt && oxlint --fix"
+    "fix": "oxfmt && oxlint --fix",
+    "test:shutdown": "node --test test/shutdown-signals.test.cjs",
+    "test:shutdown:native": "sh test/shutdown-native.sh"
   },
   "dependencies": {
     "@bull-board/api": "8.3.0",

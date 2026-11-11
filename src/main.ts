@@ -21,6 +21,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 
 import { TypedConfigService } from '@common/config/app-config/typed-config.service';
+import { GRACEFUL_SHUTDOWN_SIGNALS } from '@common/constants/shutdown-signals';
 import {
     proxyCheckMiddleware,
     getRealIp,
@@ -139,7 +140,7 @@ async function bootstrap(): Promise<void> {
 
     // app.useGlobalFilters(new CatchAllExceptionFilter());
 
-    app.enableShutdownHooks();
+    app.enableShutdownHooks(GRACEFUL_SHUTDOWN_SIGNALS);
 
     await app.listen(Number(config.getOrThrow('APP_PORT')));
 
